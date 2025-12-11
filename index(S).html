@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Budget-Friendly Hiking Planner</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+</head>
+<body>
+  <div class="container">
+    <div>
+      <div class="header">
+        <div class="logo">BP</div>
+        <div>
+          <h1>Budget-Friendly Hiking Planner</h1>
+          <div class="muted">Plan hikes, track budget, and buy affordable gear</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Plan a Hike</h2>
+        <label>Filter by Difficulty
+          <select id="filterDifficulty">
+            <option value="">All</option>
+            <option>Easy</option>
+            <option>Moderate</option>
+            <option>Hard</option>
+          </select>
+        </label>
+        <form id="hikeForm">
+          <div class="form-row">
+            <label>Hike name<input id="hikeName" required></label>
+            <label>Location<input id="hikeLocation"></label>
+          </div>
+          <div class="form-row">
+            <label>Difficulty
+              <select id="hikeDifficulty">
+                <option>Easy</option><option>Moderate</option><option>Hard</option>
+              </select>
+            </label>
+            <label>&nbsp;<button id="clearPlans" type="button" class="small">Clear All Plans</button></label>
+          </div>
+          <label>Notes<textarea id="hikeNotes" rows="3"></textarea></label>
+          <div style="margin-top:10px" class="row">
+            <button type="submit" class="small">Save Plan</button>
+          </div>
+        </form>
+        <div id="plansList" class="list"></div>
+      </div>
+
+      <div id="mapContainer" style="display:none;margin-top:16px;">
+        <button id="closeMapBtn" type="button" class="small" style="margin-bottom:8px;">Close Map</button>
+        <div id="map" style="height:300px;"></div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <h2>Products (Store)</h2>
+        <input id="searchProducts" placeholder="Search products..." class="search-input">
+        <div id="productsList" class="list"></div>
+      </div>
+
+    </div>
+
+    <aside class="aside-stack">
+      <div class="card">
+        <h3>Your Cart</h3>
+        <div id="cartList" class="list"></div>
+        <div style="margin-top:8px" class="row">
+          <button id="checkoutBtn" type="button" class="small">Checkout</button>
+          <button id="emptyCart" type="button" class="small delete-btn">Empty</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Admin / Seller</h3>
+        <div class="muted">Enter admin password to edit inventory</div>
+        <label>Admin password<input id="adminPass" type="password"></label>
+        <div style="margin-top:8px" class="row">
+          <button id="adminLogin" type="button" class="small">Login</button>
+          <button id="adminLogout" type="button" class="small">Logout</button>
+        </div>
+
+        <div id="adminPanel" style="display:none;margin-top:10px">
+          <h4>Add / Edit Product</h4>
+          <label>Title<input id="prodTitle"></label>
+          <label>Price (USD)<input id="prodPrice" type="number" min="0" step="0.01"></label>
+          <label>Quantity<input id="prodQty" type="number" min="0" step="1"></label>
+          <label>Image URL<input id="prodImg" placeholder="https://example.com/image.png"></label>
+          <div style="margin-top:8px" class="row">
+            <button id="addProduct" type="button" class="small">Add / Update Product</button>
+            <button id="resetProducts" type="button" class="small">Reset Default</button>
+          </div>
+          <div id="adminMsg" class="muted" style="margin-top:8px"></div>
+        </div>
+      </div>
+
+      <div class="footer card">
+        Tips: Use the cart to simulate purchases. Data is stored locally in your browser.
+      </div>
+    </aside>
+  </div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
