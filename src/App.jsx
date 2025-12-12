@@ -1,44 +1,53 @@
-import { useState, useMemo } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+import { ProductCard } from "./Components/ProductCard";
+import { Cart } from "./Components/Cart";
+import { HikeList } from "./Components/HikeList";
 
-function App() {
-    const DEFAULT_PRODUCTS = [
-        {
-            id: "p1",
-            title: "Trekking Poles",
-            price: 19.99,
-            qty: 10,
-            img: "https://images.unsplash.com/photo-1551698618-1dfe5d97d256?w=400&h=300&fit=crop",
-        },
-        {
-            id: "p2",
-            title: "Water Bottle",
-            price: 9.5,
-            qty: 25,
-            img: "https://images.unsplash.com/photo-1602143407151-7111542de6e8?w=400&h=300&fit=crop",
-        },
-        {
-            id: "p3",
-            title: "Backpack 20L",
-            price: 29.99,
-            qty: 8,
-            img: "https://images.unsplash.com/photo-1622260614153-03223fb72052?w=400&h=300&fit=crop",
-        },
+const API_BASE = "http://localhost:3000/api";
+const ADMIN_PASSWORD = "admin123";
+
+const loadCart = () => {
+    try {
+        const raw = localStorage.getItem("cart");
+        return raw ? JSON.parse(raw) : [];
+    } catch {
+        return [];
+    }
+};
+const saveCart = (c) => {
+    localStorage.setItem("cart", JSON.stringify(c));
+};
+
+const getRandomColor = () => {
+    const colors = [
+        "#2b8aef",
+        "#f97316",
+        "#10b981",
+        "#eab308",
+        "#8b5cf6",
+        "#ec4899",
     ];
+    return colors[Math.floor(Math.random() * colors.length)];
+};
 
-    const ADMIN_PASSWORD = "admin123";
-
-    // State management
+export default function App() {
+    // data from backend
     const [hikes, setHikes] = useState([]);
-    const [products, setProducts] = useState(DEFAULT_PRODUCTS);
-    const [cart, setCart] = useState([]);
+    const [products, setProducts] = useState([]);
+    const [_, setOrders] = useState([]);
+
+    // ui state
     const [adminLogged, setAdminLogged] = useState(false);
+    const [adminMsg, setAdminMsg] = useState("");
+    const [adminPass, setAdminPass] = useState("");
+
     const [filterDifficulty, setFilterDifficulty] = useState("");
     const [searchTerm, setSearchTerm] = useState("");
-    const [adminPass, setAdminPass] = useState("");
-    const [adminMsg, setAdminMsg] = useState("");
 
-    // Form states
+    // forms
     const [hikeName, setHikeName] = useState("");
     const [hikeLocation, setHikeLocation] = useState("");
     const [hikeDifficulty, setHikeDifficulty] = useState("Easy");
@@ -48,237 +57,321 @@ function App() {
     const [prodPrice, setProdPrice] = useState("");
     const [prodQty, setProdQty] = useState("");
     const [prodImg, setProdImg] = useState("");
+    const [editingProductId, setEditingProductId] = useState(null);
 
-    const getRandomColor = () => {
-        const colors = [
-            "#2b8aef",
-            "#f97316",
-            "#10b981",
-            "#eab308",
-            "#8b5cf6",
-            "#ec4899",
-        ];
-        return colors[Math.floor(colors.length)];
-    };
+    // cart stored locally in browser
+    const [cart, setCart] = useState(() => loadCart());
 
-    // Optimized filtered lists with useMemo
-    const filteredHikes = useMemo(() => {
-        return filterDifficulty
-            ? hikes.filter((h) => h.difficulty === filterDifficulty)
-            : hikes;
-    }, [hikes, filterDifficulty]);
+    // map
+    const [mapLocation, setMapLocation] = useState(null);
+    const [showMap, setShowMap] = useState(false);
+    const mapRef = useRef(null);
+    const mapDivRef = useRef(null);
 
-    const filteredProducts = useMemo(() => {
-        return searchTerm
-            ? products.filter((p) =>
-                  p.title.toLowerCase().includes(searchTerm.toLowerCase()),
-              )
-            : products;
-    }, [products, searchTerm]);
-
-    const cartTotal = useMemo(() => {
-        return cart.reduce((sum, item) => sum + item.price * item.qty, 0);
-    }, [cart]);
-
-    // Hike handlers
-    const handleHikeSubmit = (e) => {
-        e.preventDefault();
-        if (!hikeName.trim()) {
-            alert("Name required");
-            return;
+    // fetch helpers
+    const fetchProducts = async () => {
+        try {
+            const res = await fetch(`${API_BASE}/products`);
+            const data = await res.json();
+            // ensure color
+            const updated = data.map((p) => ({
+                ...p,
+                color: p.color || getRandomColor(),
+            }));
+            setProducts(updated);
+        } catch {
+            console.error("Failed to fetch products");
         }
-        setHikes([
-            ...hikes,
-            {
-                name: hikeName,
-                location: hikeLocation,
-                difficulty: hikeDifficulty,
-                notes: hikeNotes,
-            },
-        ]);
-        setHikeName("");
-        setHikeLocation("");
-        setHikeDifficulty("Easy");
-        setHikeNotes("");
     };
 
-    const deletePlan = (idx) => {
+    const fetchHikes = async () => {
+        try {
+            const res = await fetch(`${API_BASE}/hikes`);
+            const data = await res.json();
+            setHikes(data);
+        } catch {
+            console.error("Failed to fetch hikes");
+        }
+    };
+
+    const fetchOrders = async () => {
+        try {
+            const res = await fetch(`${API_BASE}/orders`);
+            const data = await res.json();
+            setOrders(data);
+        } catch {
+            /* ignore */
+        }
+    };
+
+    useEffect(() => {
+        fetchProducts();
+        fetchHikes();
+        fetchOrders();
+    }, []);
+
+    // persist cart locally
+    useEffect(() => saveCart(cart), [cart]);
+
+    const filteredHikes = useMemo(
+        () =>
+            filterDifficulty
+                ? hikes.filter((h) => h.difficulty === filterDifficulty)
+                : hikes,
+        [hikes, filterDifficulty],
+    );
+    const filteredProducts = useMemo(
+        () =>
+            searchTerm
+                ? products.filter((p) =>
+                      p.title.toLowerCase().includes(searchTerm.toLowerCase()),
+                  )
+                : products,
+        [products, searchTerm],
+    );
+
+    // Hike handlers using API
+    const handleHikeSubmit = async (e) => {
+        e.preventDefault();
+        if (!hikeName.trim()) return alert("Name required");
+        try {
+            const res = await fetch(`${API_BASE}/hikes`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    name: hikeName.trim(),
+                    location: hikeLocation.trim(),
+                    difficulty: hikeDifficulty,
+                    notes: hikeNotes.trim(),
+                }),
+            });
+            const newHike = await res.json();
+            setHikes((prev) => [...prev, newHike]);
+            setHikeName("");
+            setHikeLocation("");
+            setHikeDifficulty("Easy");
+            setHikeNotes("");
+        } catch {
+            alert("Failed to create hike");
+        }
+    };
+
+    const deletePlan = async (idx) => {
+        const hike = filteredHikes[idx];
+        if (!hike) return;
         if (!window.confirm("Delete plan?")) return;
-        setHikes(hikes.filter((_, i) => i !== idx));
+        try {
+            await fetch(`${API_BASE}/hikes/${hike.id}`, { method: "DELETE" });
+            // refresh list
+            fetchHikes();
+        } catch {
+            alert("Delete failed");
+        }
     };
 
     const editPlan = (idx) => {
-        const h = hikes[idx];
+        const h = filteredHikes[idx];
+        if (!h) return;
         setHikeName(h.name);
         setHikeLocation(h.location);
-        setHikeDifficulty(h.difficulty);
-        setHikeNotes(h.notes);
-        setHikes(hikes.filter((_, i) => i !== idx));
+        setHikeDifficulty(h.difficulty || "Easy");
+        setHikeNotes(h.notes || "");
+        // remove local copy before saving; will do PUT on submission in future if needed
+        setHikes((prev) => prev.filter((x) => x.id !== h.id));
     };
 
-    const clearAllPlans = () => {
-        if (window.confirm("Clear all plans?")) {
-            setHikes([]);
-        }
-    };
-
-    const showMap = (location) => {
-        alert(
-            `Map view for: ${location}\n(Map functionality would require Leaflet integration)`,
-        );
-    };
-
-    // Cart handlers
-    const addToCart = (productId) => {
-        const product = products.find((p) => p.id === productId);
-        if (!product || product.qty <= 0) {
-            alert("Out of stock");
-            return;
-        }
-
-        const existingItem = cart.find((c) => c.id === productId);
-        if (existingItem) {
-            setCart(
-                cart.map((c) =>
-                    c.id === productId ? { ...c, qty: c.qty + 1 } : c,
+    const clearAllPlans = async () => {
+        if (!window.confirm("Clear all plans?")) return;
+        try {
+            // delete one by one (server has no bulk delete)
+            const current = await (await fetch(`${API_BASE}/hikes`)).json();
+            await Promise.all(
+                current.map((h) =>
+                    fetch(`${API_BASE}/hikes/${h.id}`, { method: "DELETE" }),
                 ),
             );
-        } else {
-            setCart([
-                ...cart,
+            fetchHikes();
+        } catch {
+            alert("Failed to clear");
+        }
+    };
+
+    // Cart handlers (client-side cart; checkout posts to server)
+    const addToCart = (productId) => {
+        const product = products.find((p) => p.id === productId);
+        if (!product || product.qty <= 0) return alert("Out of stock");
+        setCart((prev) => {
+            const found = prev.find((c) => c.id === productId);
+            if (found)
+                return prev.map((c) =>
+                    c.id === productId ? { ...c, qty: c.qty + 1 } : c,
+                );
+            return [
+                ...prev,
                 {
                     id: product.id,
                     title: product.title,
                     price: product.price,
                     qty: 1,
                 },
-            ]);
-        }
-    };
-
-    const changeCartQty = (idx, delta) => {
-        const newCart = [...cart];
-        newCart[idx].qty += delta;
-        if (newCart[idx].qty <= 0) {
-            newCart.splice(idx, 1);
-        }
-        setCart(newCart);
-    };
-
-    const removeCartItem = (idx) => {
-        setCart(cart.filter((_, i) => i !== idx));
-    };
-
-    const handleCheckout = () => {
-        if (cart.length === 0) {
-            alert("Cart empty");
-            return;
-        }
-
-        for (const c of cart) {
-            const p = products.find((x) => x.id === c.id);
-            if (!p || p.qty < c.qty) {
-                alert("Not enough inventory for " + (p ? p.title : c.title));
-                return;
-            }
-        }
-
-        if (!window.confirm("Proceed to checkout?")) return;
-
-        const updatedProducts = products.map((p) => {
-            const cartItem = cart.find((c) => c.id === p.id);
-            if (cartItem) {
-                return { ...p, qty: Math.max(0, p.qty - cartItem.qty) };
-            }
-            return p;
+            ];
         });
+    };
 
-        setProducts(updatedProducts);
-        setCart([]);
-        alert("Purchase complete — inventory updated");
+    const changeCartQty = (idx, delta) =>
+        setCart((prev) => {
+            const copy = [...prev];
+            if (!copy[idx]) return copy;
+            copy[idx] = { ...copy[idx], qty: copy[idx].qty + delta };
+            if (copy[idx].qty <= 0) copy.splice(idx, 1);
+            return copy;
+        });
+    const removeCartItem = (idx) =>
+        setCart((prev) => prev.filter((_, i) => i !== idx));
+
+    const handleCheckout = async () => {
+        if (cart.length === 0) return alert("Cart empty");
+        try {
+            const items = cart.map((c) => ({ id: c.id, qty: c.qty }));
+            const res = await fetch(`${API_BASE}/orders`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ items }),
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                return alert(err.message || "Checkout failed");
+            }
+            const order = await res.json();
+            // refresh products and orders
+            fetchProducts();
+            fetchOrders();
+            setCart([]);
+            alert(
+                "Purchase complete — inventory updated (order id: " +
+                    order.id +
+                    ")",
+            );
+        } catch {
+            alert("Checkout error");
+        }
     };
 
     const emptyCart = () => {
-        if (window.confirm("Empty cart?")) {
-            setCart([]);
-        }
+        if (window.confirm("Empty cart?")) setCart([]);
     };
 
-    // Admin handlers
+    // Admin handlers (talk to API)
     const handleAdminLogin = () => {
         if (adminPass === ADMIN_PASSWORD) {
             setAdminLogged(true);
             setAdminMsg("Logged in");
-        } else {
-            setAdminMsg("Wrong password");
-        }
+        } else setAdminMsg("Wrong password");
     };
-
     const handleAdminLogout = () => {
         setAdminLogged(false);
         setAdminMsg("");
     };
 
-    const handleAddProduct = () => {
-        if (!adminLogged) {
-            alert("Admin only");
-            return;
+    const handleAddProduct = async () => {
+        if (!adminLogged) return alert("Admin only");
+        const title = prodTitle.trim();
+        if (!title) return alert("Enter product title");
+        const price = parseFloat(prodPrice) || 0;
+        const qty = parseInt(prodQty) || 0;
+        const img = prodImg.trim();
+        try {
+            if (editingProductId) {
+                const res = await fetch(
+                    `${API_BASE}/products/${editingProductId}`,
+                    {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ title, price, qty, img }),
+                    },
+                );
+                if (!res.ok) throw new Error();
+                setAdminMsg("Product updated");
+            } else {
+                const res = await fetch(`${API_BASE}/products`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ title, price, qty, img }),
+                });
+                if (!res.ok) throw new Error();
+                setAdminMsg("Product added");
+            }
+            setProdTitle("");
+            setProdPrice("");
+            setProdQty("");
+            setProdImg("");
+            setEditingProductId(null);
+            fetchProducts();
+        } catch {
+            alert("Product save failed");
         }
+    };
 
-        if (!prodTitle.trim()) {
-            alert("Enter product title");
-            return;
-        }
-
-        const existingProduct = products.find(
-            (x) => x.title.toLowerCase() === prodTitle.toLowerCase(),
-        );
-
-        if (existingProduct) {
-            setProducts(
-                products.map((p) =>
-                    p.id === existingProduct.id
-                        ? {
-                              ...p,
-                              price: parseFloat(prodPrice) || 0,
-                              qty: parseInt(prodQty) || 0,
-                              img: prodImg || p.img,
-                          }
-                        : p,
+    const resetProducts = async () => {
+        if (!window.confirm("Reset to default products?")) return;
+        // For demo, we'll delete all products and recreate defaults via API
+        try {
+            const res = await fetch(`${API_BASE}/products`);
+            const current = await res.json();
+            await Promise.all(
+                current.map((p) =>
+                    fetch(`${API_BASE}/products/${p.id}`, { method: "DELETE" }),
                 ),
             );
-            setAdminMsg("Product updated");
-        } else {
-            const newProduct = {
-                id: "p",
-                title: prodTitle,
-                price: parseFloat(prodPrice) || 0,
-                qty: parseInt(prodQty) || 0,
-                img:
-                    prodImg ||
-                    "https://images.unsplash.com/photo-1551698618-1dfe5d97d256?w=400&h=300&fit=crop",
-                color: getRandomColor(),
-            };
-            setProducts([...products, newProduct]);
-            setAdminMsg("Product added");
+            // recreate defaults client-side (these match the server initial set in server.js)
+            await fetch(`${API_BASE}/products`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    title: "Hiking Boots",
+                    price: 89.99,
+                    qty: 15,
+                    img: "images/product1.png",
+                }),
+            });
+            await fetch(`${API_BASE}/products`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    title: "Backpack",
+                    price: 45.5,
+                    qty: 20,
+                    img: "images/product2.png",
+                }),
+            });
+            await fetch(`${API_BASE}/products`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    title: "Water Bottle",
+                    price: 12.99,
+                    qty: 50,
+                    img: "images/product3.png",
+                }),
+            });
+            fetchProducts();
+            setAdminMsg("Reset done");
+        } catch {
+            alert("Reset failed");
         }
-
-        setProdTitle("");
-        setProdPrice("");
-        setProdQty("");
-        setProdImg("");
     };
 
-    const resetProducts = () => {
-        if (!window.confirm("Reset to default products?")) return;
-        setProducts([...DEFAULT_PRODUCTS]);
-        setAdminMsg("Reset done");
-    };
-
-    const deleteProduct = (productId) => {
+    const deleteProduct = async (productId) => {
         if (!adminLogged) return;
         if (!window.confirm("Delete this product?")) return;
-        setProducts(products.filter((p) => p.id !== productId));
+        try {
+            await fetch(`${API_BASE}/products/${productId}`, {
+                method: "DELETE",
+            });
+            fetchProducts();
+        } catch {
+            alert("Delete failed");
+        }
     };
 
     const editProduct = (productId) => {
@@ -286,9 +379,63 @@ function App() {
         const p = products.find((x) => x.id === productId);
         if (!p) return;
         setProdTitle(p.title);
-        setProdPrice(p.price.toString());
-        setProdQty(p.qty.toString());
-        setProdImg(p.img);
+        setProdPrice(String(p.price));
+        setProdQty(String(p.qty));
+        setProdImg(p.img || "");
+        setEditingProductId(p.id);
+    };
+
+    // Map: uses npm leaflet
+    useEffect(() => {
+        if (!showMap || !mapLocation) return;
+        let cancelled = false;
+        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(mapLocation)}`;
+        fetch(url)
+            .then((res) => res.json())
+            .then((data) => {
+                if (cancelled) return;
+                if (!data || !data[0]) return alert("Location not found");
+                const lat = parseFloat(data[0].lat);
+                const lon = parseFloat(data[0].lon);
+                if (mapRef.current) {
+                    mapRef.current.remove();
+                    mapRef.current = null;
+                }
+                mapRef.current = L.map(mapDivRef.current).setView(
+                    [lat, lon],
+                    13,
+                );
+                L.tileLayer(
+                    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                    { attribution: "&copy; OpenStreetMap contributors" },
+                ).addTo(mapRef.current);
+                L.marker([lat, lon])
+                    .addTo(mapRef.current)
+                    .bindPopup(mapLocation)
+                    .openPopup();
+            })
+            .catch(() => alert("Map error"));
+        return () => {
+            cancelled = true;
+            if (mapRef.current) {
+                mapRef.current.remove();
+                mapRef.current = null;
+            }
+        };
+    }, [showMap, mapLocation]);
+
+    const openMapForLocation = (location) => {
+        if (!location) return alert("No location provided");
+        setMapLocation(location);
+        setShowMap(true);
+    };
+    const closeMap = () => {
+        setShowMap(false);
+        setMapLocation(null);
+        if (mapRef.current) {
+            mapRef.current.remove();
+            mapRef.current = null;
+        }
     };
 
     return (
@@ -321,7 +468,8 @@ function App() {
                             <option>Hard</option>
                         </select>
                     </label>
-                    <div id="hikeForm">
+
+                    <form id="hikeForm" onSubmit={handleHikeSubmit}>
                         <div className="form-row">
                             <label>
                                 Hike name
@@ -345,6 +493,7 @@ function App() {
                                 />
                             </label>
                         </div>
+
                         <div className="form-row">
                             <label>
                                 Difficulty
@@ -367,11 +516,16 @@ function App() {
                                     type="button"
                                     className="small"
                                     onClick={clearAllPlans}
+                                    style={{
+                                        margin: "15px 0px",
+                                        padding: "10px",
+                                    }}
                                 >
                                     Clear All Plans
                                 </button>
                             </label>
                         </div>
+
                         <label>
                             Notes
                             <textarea
@@ -379,59 +533,42 @@ function App() {
                                 rows="3"
                                 value={hikeNotes}
                                 onChange={(e) => setHikeNotes(e.target.value)}
-                            ></textarea>
+                            />
                         </label>
-                        <div style={{ marginTop: "10px" }} className="row">
-                            <button
-                                type="submit"
-                                className="small"
-                                onClick={handleHikeSubmit}
-                            >
-                                Save Plan
-                            </button>
-                        </div>
-                    </div>
+
+                        <button
+                            style={{ margin: "10px 0px", padding: "10px" }}
+                            type="submit"
+                            className="small"
+                        >
+                            Save Plan
+                        </button>
+                    </form>
 
                     <div id="plansList" className="list">
-                        {filteredHikes.length === 0 ? (
-                            <div className="muted">No plans yet</div>
-                        ) : (
-                            filteredHikes.map((h, idx) => (
-                                <div key={idx} className="item">
-                                    <div>
-                                        <strong>{h.name}</strong>
-                                        <div
-                                            className={`muted ${h.difficulty.toLowerCase()}`}
-                                        >
-                                            {h.location} • {h.difficulty}
-                                        </div>
-                                        <div className="muted">{h.notes}</div>
-                                    </div>
-                                    <div className="controls">
-                                        <button
-                                            onClick={() => editPlan(idx)}
-                                            className="small"
-                                        >
-                                            Edit
-                                        </button>
-                                        <button
-                                            onClick={() => deletePlan(idx)}
-                                            className="small"
-                                        >
-                                            Delete
-                                        </button>
-                                        <button
-                                            onClick={() => showMap(h.location)}
-                                            className="small"
-                                        >
-                                            View on Map
-                                        </button>
-                                    </div>
-                                </div>
-                            ))
-                        )}
+                        <HikeList
+                            hikes={filteredHikes}
+                            onEdit={editPlan}
+                            onDelete={deletePlan}
+                            onViewMap={openMapForLocation}
+                        />
                     </div>
                 </div>
+
+                {showMap && (
+                    <div id="mapContainer" style={{ marginTop: "16px" }}>
+                        <button
+                            id="closeMapBtn"
+                            type="button"
+                            className="small"
+                            style={{ margin: "15px 0px", padding: "10px" }}
+                            onClick={closeMap}
+                        >
+                            Close Map
+                        </button>
+                        <div id="map" ref={mapDivRef} style={{ height: 300 }} />
+                    </div>
+                )}
 
                 <div className="card" style={{ marginTop: "16px" }}>
                     <h2>Products (Store)</h2>
@@ -442,73 +579,21 @@ function App() {
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
+
                     <div id="productsList" className="list">
                         {filteredProducts.length === 0 ? (
                             <div className="muted">No products found</div>
                         ) : (
-                            filteredProducts.map((p) => {
-                                const color = p.color || getRandomColor();
-                                return (
-                                    <div
-                                        key={p.id}
-                                        className="item"
-                                        style={{
-                                            borderTop: `4px solid ${color}`,
-                                        }}
-                                    >
-                                        <div className="product">
-                                            <img
-                                                src={p.img}
-                                                alt=""
-                                                className="product-img"
-                                            />
-                                            <div
-                                                style={{ textAlign: "center" }}
-                                            >
-                                                <strong>{p.title}</strong>
-                                                <div className="muted">
-                                                    $
-                                                    {Number(p.price).toFixed(2)}{" "}
-                                                    • {p.qty} left
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div className="controls">
-                                            <button
-                                                onClick={() => addToCart(p.id)}
-                                                disabled={p.qty <= 0}
-                                                className="small"
-                                            >
-                                                Add
-                                            </button>
-                                            {adminLogged && (
-                                                <>
-                                                    <button
-                                                        onClick={() =>
-                                                            editProduct(p.id)
-                                                        }
-                                                        className="small"
-                                                    >
-                                                        Edit
-                                                    </button>
-                                                    <button
-                                                        onClick={() =>
-                                                            deleteProduct(p.id)
-                                                        }
-                                                        className="small"
-                                                        style={{
-                                                            background: "red",
-                                                            color: "white",
-                                                        }}
-                                                    >
-                                                        Delete
-                                                    </button>
-                                                </>
-                                            )}
-                                        </div>
-                                    </div>
-                                );
-                            })
+                            filteredProducts.map((p) => (
+                                <ProductCard
+                                    key={p.id}
+                                    product={p}
+                                    onAdd={addToCart}
+                                    adminLogged={adminLogged}
+                                    onEdit={editProduct}
+                                    onDelete={deleteProduct}
+                                />
+                            ))
                         )}
                     </div>
                 </div>
@@ -518,74 +603,13 @@ function App() {
                 <div className="card">
                     <h3>Your Cart</h3>
                     <div id="cartList" className="list">
-                        {cart.length === 0 ? (
-                            <div className="muted">Cart is empty</div>
-                        ) : (
-                            <>
-                                {cart.map((c, idx) => (
-                                    <div key={idx} className="item">
-                                        <div>
-                                            <strong>{c.title}</strong>
-                                            <div className="muted">
-                                                ${Number(c.price).toFixed(2)} ×{" "}
-                                                {c.qty}
-                                            </div>
-                                        </div>
-                                        <div className="controls">
-                                            <button
-                                                onClick={() =>
-                                                    changeCartQty(idx, -1)
-                                                }
-                                                className="small"
-                                            >
-                                                -
-                                            </button>
-                                            <button
-                                                onClick={() =>
-                                                    changeCartQty(idx, 1)
-                                                }
-                                                className="small"
-                                            >
-                                                +
-                                            </button>
-                                            <button
-                                                onClick={() =>
-                                                    removeCartItem(idx)
-                                                }
-                                                className="small"
-                                            >
-                                                Remove
-                                            </button>
-                                        </div>
-                                    </div>
-                                ))}
-                                <div
-                                    style={{
-                                        marginTop: "8px",
-                                        fontWeight: "bold",
-                                    }}
-                                >
-                                    Total: ${cartTotal.toFixed(2)}
-                                </div>
-                            </>
-                        )}
-                    </div>
-                    <div style={{ marginTop: "8px" }} className="row">
-                        <button
-                            id="checkoutBtn"
-                            className="small"
-                            onClick={handleCheckout}
-                        >
-                            Checkout
-                        </button>
-                        <button
-                            id="emptyCart"
-                            type="button"
-                            className="small"
-                            onClick={emptyCart}
-                        >
-                            Empty
-                        </button>
+                        <Cart
+                            cart={cart}
+                            changeQty={changeCartQty}
+                            removeItem={removeCartItem}
+                            onCheckout={handleCheckout}
+                            onEmpty={emptyCart}
+                        />
                     </div>
                 </div>
 
@@ -601,6 +625,7 @@ function App() {
                             type="password"
                             value={adminPass}
                             onChange={(e) => setAdminPass(e.target.value)}
+                            style={{ margin: "5px 0px", padding: "5px" }}
                         />
                     </label>
                     <div style={{ marginTop: "8px" }} className="row">
@@ -608,6 +633,7 @@ function App() {
                             id="adminLogin"
                             className="small"
                             onClick={handleAdminLogin}
+                            style={{ margin: "5px 0px", padding: "5px" }}
                         >
                             Login
                         </button>
@@ -615,90 +641,93 @@ function App() {
                             id="adminLogout"
                             className="small"
                             onClick={handleAdminLogout}
+                            style={{ margin: "5px 0px", padding: "5px" }}
                         >
                             Logout
                         </button>
                     </div>
-                    <div
-                        id="adminPanel"
-                        style={{
-                            display: adminLogged ? "block" : "none",
-                            marginTop: "10px",
-                        }}
-                    >
-                        <h4>Add / Edit Product</h4>
-                        <label>
-                            Title
-                            <input
-                                id="prodTitle"
-                                value={prodTitle}
-                                onChange={(e) => setProdTitle(e.target.value)}
-                            />
-                        </label>
-                        <label>
-                            Price (USD)
-                            <input
-                                id="prodPrice"
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={prodPrice}
-                                onChange={(e) => setProdPrice(e.target.value)}
-                            />
-                        </label>
-                        <label>
-                            Quantity
-                            <input
-                                id="prodQty"
-                                type="number"
-                                min="0"
-                                step="1"
-                                value={prodQty}
-                                onChange={(e) => setProdQty(e.target.value)}
-                            />
-                        </label>
-                        <label>
-                            Image URL
-                            <input
-                                id="prodImg"
-                                placeholder="https://example.com/image.png"
-                                value={prodImg}
-                                onChange={(e) => setProdImg(e.target.value)}
-                            />
-                        </label>
-                        <div style={{ marginTop: "8px" }} className="row">
-                            <button
-                                id="addProduct"
-                                className="small"
-                                onClick={handleAddProduct}
-                            >
-                                Add / Update Product
-                            </button>
-                            <button
-                                id="resetProducts"
-                                className="small"
-                                onClick={resetProducts}
-                            >
-                                Reset Default
-                            </button>
-                        </div>
-                        <div
-                            id="adminMsg"
-                            className="muted"
-                            style={{ marginTop: "8px" }}
-                        >
-                            {adminMsg}
-                        </div>
-                    </div>
-                </div>
 
-                <div className="footer card">
-                    Tips: Use the cart to simulate purchases. Data is stored
-                    locally in your browser.
+                    {adminLogged && (
+                        <div id="adminPanel" style={{ marginTop: "10px" }}>
+                            <h4>Add / Edit Product</h4>
+                            <label>
+                                Title
+                                <input
+                                    id="prodTitle"
+                                    value={prodTitle}
+                                    onChange={(e) =>
+                                        setProdTitle(e.target.value)
+                                    }
+                                />
+                            </label>
+                            <label>
+                                Price (USD)
+                                <input
+                                    id="prodPrice"
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={prodPrice}
+                                    onChange={(e) =>
+                                        setProdPrice(e.target.value)
+                                    }
+                                />
+                            </label>
+                            <label>
+                                Quantity
+                                <input
+                                    id="prodQty"
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    value={prodQty}
+                                    onChange={(e) => setProdQty(e.target.value)}
+                                />
+                            </label>
+                            <label>
+                                Image URL
+                                <input
+                                    id="prodImg"
+                                    placeholder="https://example.com/image.png"
+                                    value={prodImg}
+                                    onChange={(e) => setProdImg(e.target.value)}
+                                />
+                            </label>
+                            <div style={{ marginTop: "8px" }} className="row">
+                                <button
+                                    id="addProduct"
+                                    className="small"
+                                    onClick={handleAddProduct}
+                                    style={{
+                                        margin: "5px 0px",
+                                        padding: "5px",
+                                    }}
+                                >
+                                    Add / Update Product
+                                </button>
+                                <button
+                                    id="resetProducts"
+                                    className="small"
+                                    onClick={resetProducts}
+                                    style={{
+                                        margin: "5px 0px",
+                                        padding: "5px",
+                                    }}
+                                >
+                                    Reset Default
+                                </button>
+                            </div>
+                            <div
+                                id="adminMsg"
+                                className="muted"
+                                style={{ marginTop: "8px" }}
+                            >
+                                {adminMsg}
+                            </div>
+                        </div>
+                    )}
                 </div>
             </aside>
         </div>
     );
 }
-
-export default App;
