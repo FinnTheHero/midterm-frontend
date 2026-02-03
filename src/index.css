@@ -276,3 +276,49 @@ button.delete-btn:hover {
         grid-template-columns: 1fr;
     }
 }
+
+/* LOGIN PAGE */
+
+.login-layout {
+    display: flex;          /* stack items vertically */
+    flex-direction: column; /* banner on top, login below */
+    align-items: center;    /* center horizontally */
+    gap: 24px;              /* space between banner and login */
+}
+
+.login-banner {
+    background: linear-gradient(135deg, #6fae78, #8ccf92);
+    color: white;
+    padding: 40px;
+    border-radius: 20px;
+    box-shadow: var(--shadow);
+}
+
+.login-banner h1 {
+    font-size: 32px;
+    margin-bottom: 12px;
+}
+
+.login-banner {
+    width: 100%;
+    max-width: 600px;
+    text-align: center;
+}
+
+.banner-controls {
+    margin-top: 20px;
+    display: flex;
+    gap: 10px;
+}
+
+.login-card {
+    width: 100%;
+    max-width: 633px;
+}
+
+/* Mobile */
+@media (max-width: 900px) {
+    .login-layout {
+        grid-template-columns: 1fr;
+    }
+}

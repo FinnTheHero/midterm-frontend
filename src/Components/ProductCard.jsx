@@ -1,61 +1,23 @@
 export function ProductCard({ product, onAdd, adminLogged, onEdit, onDelete }) {
-    const color = product.color || "#ccc";
-    return (
-        <div className="item" style={{ borderTop: `4px solid ${color}` }}>
-            <div className="product">
-                {product.img ? (
-                    <img
-                        src={product.img}
-                        alt={product.title}
-                        className="product-img"
-                        onError={(ev) => {
-                            // hide broken images gracefully
-                            ev.currentTarget.style.display = "none";
-                        }}
-                    />
-                ) : (
-                    <div
-                        className="product-media"
-                        // style={{ background: color }}
-                    >
-                        {(product.title || "").split(" ")[0]}
-                    </div>
-                )}
+  return (
+    <div className="product-card">
+      {product.img && <img src={product.img} alt={product.title} />}
+      <h4>{product.title}</h4>
+      <div className="muted">${product.price.toFixed(2)}</div>
+      <div className="muted">Stock: {product.qty}</div>
 
-                <div style={{ textAlign: "center" }}>
-                    <strong>{product.title}</strong>
-                    <div className="muted">
-                        ${Number(product.price).toFixed(2)} • {product.qty} left
-                    </div>
-                </div>
-            </div>
+      <div className="row">
+        <button className="small" onClick={() => onAdd(product.id)}>
+          Add to Cart
+        </button>
 
-            <button
-                onClick={() => onAdd(product.id)}
-                disabled={product.qty <= 0}
-                className="small"
-                style={{ margin: "5px 0px", padding: "5px" }}
-            >
-                Add
-            </button>
-            {adminLogged && (
-                <>
-                    <button
-                        onClick={() => onEdit(product.id)}
-                        className="small"
-                        style={{ margin: "5px 0px", padding: "5px" }}
-                    >
-                        Edit
-                    </button>
-                    <button
-                        onClick={() => onDelete(product.id)}
-                        className="small delete-btn"
-                        style={{ margin: "5px 0px", padding: "5px" }}
-                    >
-                        Delete
-                    </button>
-                </>
-            )}
-        </div>
-    );
+        {adminLogged && (
+          <>
+            <button className="small" onClick={() => onEdit(product.id)}>Edit</button>
+            <button className="small danger" onClick={() => onDelete(product.id)}>Delete</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
