@@ -137,14 +137,30 @@ export default function App() {
   };
 
   // --- LocalStorage helpers ---
-  useEffect(() => saveCart(cart), [cart]);
   useEffect(() => {
-    localStorage.setItem("hikes", JSON.stringify(hikes));
-  }, [hikes]);
+    if (!user) return;
+    localStorage.setItem(
+      `cart_${user.username}`,
+      JSON.stringify(cart)
+    );
+  }, [cart, user]);
+
 
   useEffect(() => {
-    localStorage.setItem("favorites", JSON.stringify(favorites));
-  }, [favorites]);
+    if (!user) return;
+    localStorage.setItem(
+      `hikes_${user.username}`,
+      JSON.stringify(hikes)
+    );
+  }, [hikes, user]);
+
+  useEffect(() => {
+    if (!user) return;
+    localStorage.setItem(
+      `favorites_${user.username}`,
+      JSON.stringify(favorites)
+    );
+  }, [favorites, user]);
 
 
   // --- Filtered ---
@@ -193,9 +209,25 @@ export default function App() {
     const u = saved[username];
     if (!u || u.password !== password) return alert("Wrong username/password");
     setUser({ username, isAdmin: u.isAdmin });
+
+    const savedCart = JSON.parse(
+      localStorage.getItem(`cart_${username}`) || "[]"
+    );
+    setCart(savedCart);
+
+
+    const savedHikes = JSON.parse(
+      localStorage.getItem(`hikes_${username}`) || "[]"
+    );
+    setHikes(savedHikes);
+
   };
 
-  const handleLogout = () => setUser(null);
+  const handleLogout = () => {
+    setUser(null);
+    setHikes([]);
+  };
+
 
   // --- Hikes ---
   const checkRandomDanger = () => {
