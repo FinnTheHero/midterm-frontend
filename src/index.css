@@ -280,10 +280,10 @@ button.delete-btn:hover {
 /* LOGIN PAGE */
 
 .login-layout {
-    display: flex;          /* stack items vertically */
-    flex-direction: column; /* banner on top, login below */
-    align-items: center;    /* center horizontally */
-    gap: 24px;              /* space between banner and login */
+    display: flex;         
+    flex-direction: column; 
+    align-items: center;    
+    gap: 24px;              
 }
 
 .login-banner {
@@ -322,3 +322,12 @@ button.delete-btn:hover {
         grid-template-columns: 1fr;
     }
 }
+
+
+.product-card img {
+    width: 100%;
+    height: 160px;       
+    object-fit: contain;   
+    border-radius: 12px;
+}
+

@@ -1,4 +1,3 @@
-
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import L from "leaflet";
@@ -7,10 +6,12 @@ import { ProductCard } from "./Components/ProductCard";
 import { Cart } from "./Components/Cart";
 import { HikeList } from "./Components/HikeList";
 
+
+
 const DEFAULT_PRODUCTS = [
-  { id: 1, title: "Hiking Boots", price: 89.99, qty: 15, img: "images/product1.png" },
-  { id: 2, title: "Backpack", price: 45.5, qty: 20, img: "images/product2.png" },
-  { id: 3, title: "Water Bottle", price: 12.99, qty: 50, img: "images/product3.png" },
+  { id: 1, title: "Hiking Boots", price: 89.99, qty: 15, img: "/images/product1.png" },
+  { id: 2, title: "Backpack", price: 45.5, qty: 20, img: "/images/product2.png" },
+  { id: 3, title: "Water Bottle", price: 12.99, qty: 50, img: "/images/product3.png" },
 ];
 
 const DIFFICULTY_ITEMS = {
@@ -86,35 +87,65 @@ export default function App() {
     );
   };
 
+  const [favorites, setFavorites] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("favorites")) || [];
+    } catch {
+      return [];
+    }
+  });
+
+  const toggleFavorite = (hikeId) => {
+    setFavorites(prev =>
+      prev.includes(hikeId)
+        ? prev.filter(id => id !== hikeId)
+        : [...prev, hikeId]
+    );
+  };
+
 
   // --- MAP ---
   const [mapLocation, setMapLocation] = useState(null);
+  const [mapDifficulty, setMapDifficulty] = useState("Easy");
   const [showMap, setShowMap] = useState(false);
   const mapRef = useRef(null);
   const mapDivRef = useRef(null);
 
+  // --- Updated generateRandomTrails ---
   const generateRandomTrails = (lat, lng) => {
     const trails = [];
 
-    for (let i = 0; i < 3; i++) {
-        const offsetLat = (Math.random() - 0.5) * 0.02;
-        const offsetLng = (Math.random() - 0.5) * 0.02;
+    for (let i = 0; i < 6; i++) {
+      const offsetLat = (Math.random() - 0.5) * 0.02;
+      const offsetLng = (Math.random() - 0.5) * 0.02;
 
-        trails.push([
-            [lat, lng],
-            [lat + offsetLat, lng + offsetLng],
-            [lat + offsetLat * 1.5, lng + offsetLng * 1.5],
-        ]);
+      const path = [
+        [lat, lng],
+        [lat + offsetLat, lng + offsetLng],
+        [lat + offsetLat * 1.5, lng + offsetLng * 1.5],
+      ];
+
+      // approximate length in km
+      const length = Math.sqrt(Math.pow(offsetLat*111,2)+Math.pow(offsetLng*111,2)).toFixed(1); 
+      // approximate duration in minutes
+      const duration = Math.floor(Math.random()*120 + 30);
+
+      trails.push({ path, length, duration });
     }
 
     return trails;
-};
+  };
 
   // --- LocalStorage helpers ---
   useEffect(() => saveCart(cart), [cart]);
   useEffect(() => {
     localStorage.setItem("hikes", JSON.stringify(hikes));
   }, [hikes]);
+
+  useEffect(() => {
+    localStorage.setItem("favorites", JSON.stringify(favorites));
+  }, [favorites]);
+
 
   // --- Filtered ---
   const filteredHikes = useMemo(() =>
@@ -128,6 +159,25 @@ export default function App() {
 
   // --- Login/Register ---
   const USERS_KEY = "hiking_users";
+
+  const handleCheckout = () => {
+    if (cart.length === 0) return alert("Cart is empty");
+
+    // Reduce stock quantities
+    setProducts(prevProducts =>
+      prevProducts.map(p => {
+        const cartItem = cart.find(c => c.id === p.id);
+        if (!cartItem) return p; // not in cart, leave unchanged
+        return { ...p, qty: Math.max(p.qty - cartItem.qty, 0) }; // reduce qty
+      })
+    );
+
+    // Clear cart
+    setCart([]);
+
+    alert("Checkout successful!");
+  };
+
 
   const handleRegister = () => {
     if (!username || !password) return alert("Enter username/password");
@@ -146,8 +196,6 @@ export default function App() {
   };
 
   const handleLogout = () => setUser(null);
-
-
 
   // --- Hikes ---
   const checkRandomDanger = () => {
@@ -245,7 +293,7 @@ export default function App() {
     setEditingProductId(p.id);
   };
 
-  // --- Map ---
+  // --- MAP ---
   useEffect(() => {
     if (!showMap || !mapLocation) return;
     let cancelled = false;
@@ -255,74 +303,66 @@ export default function App() {
       .then(data => {
         if (cancelled) return;
         if (!data || !data[0]) return alert("Location not found");
+
         const lat = parseFloat(data[0].lat);
         const lon = parseFloat(data[0].lon);
+
         if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
+
         mapRef.current = L.map(mapDivRef.current).setView([lat, lon], 13);
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; OpenStreetMap contributors" }).addTo(mapRef.current);
         L.marker([lat, lon]).addTo(mapRef.current).bindPopup(mapLocation).openPopup();
+
         const trails = generateRandomTrails(lat, lon);
+        const trailColor = mapDifficulty === "Easy" ? "green" :
+                           mapDifficulty === "Moderate" ? "yellow" : "red";
 
         trails.forEach((trail, index) => {
-            L.polyline(trail, {
-            color: "green",
-            weight: 4,
-            opacity: 0.8,
-        })
+          L.polyline(trail.path, { color: trailColor, weight: 4, opacity: 0.8 })
             .addTo(mapRef.current)
-            .bindPopup(`Suggested Hiking Trail ${index + 1}`);
+            .bindPopup(
+              `🥾 Trail ${index + 1}<br/>
+              📏 Length: ${trail.length} km<br/>
+              ⏱ Duration: ~${trail.duration} min`
+            );
         });
-
       })
       .catch(() => alert("Map error"));
-    return () => { cancelled = true; if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; } };
-  }, [showMap, mapLocation]);
 
-  const openMapForLocation = (location) => { if (!location) return alert("No location provided"); setMapLocation(location); setShowMap(true); };
+    return () => { cancelled = true; if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; } };
+  }, [showMap, mapLocation, mapDifficulty]);
+
+  const openMapForLocation = (location, difficulty) => {if (!location) return alert("No location provided");setMapLocation(location);setMapDifficulty(difficulty);setShowMap(true);};
   const closeMap = () => { setShowMap(false); setMapLocation(null); if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; } };
 
   // --- JSX ---
   if (!user) {
     return (
       <div className="container login-layout">
-        
         {/* LEFT: Banner */}
         <div className="login-banner">
           <h1>{LOGIN_BANNERS[bannerIndex].title}</h1>
           <p>{LOGIN_BANNERS[bannerIndex].text}</p>
-
           <div className="banner-controls">
             <button onClick={prevBanner} className="small">◀</button>
             <button onClick={nextBanner} className="small">▶</button>
           </div>
         </div>
-
         {/* RIGHT: Login */}
         <div className="login-card card">
           <h2>Login / Register</h2>
-
           <label>
             Username
-            <input
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-            />
+            <input value={username} onChange={(e) => setUsername(e.target.value)} />
           </label>
-
           <label>
             Password
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
           </label>
-
           <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
             <button onClick={handleLogin}>Login</button>
             <button onClick={handleRegister}>Register</button>
           </div>
-
           <p className="muted" style={{ marginTop: "10px" }}>
             Tip: Login as <b>admin</b> to manage products
           </p>
@@ -330,7 +370,6 @@ export default function App() {
       </div>
     );
   }
-
 
   return (
     <div className="container">
@@ -371,7 +410,14 @@ export default function App() {
           </form>
 
           <div id="plansList" className="list">
-            <HikeList hikes={filteredHikes} onEdit={editPlan} onDelete={deletePlan} onViewMap={openMapForLocation}/>
+            <HikeList 
+              hikes={filteredHikes}
+              onEdit={editPlan}
+              onDelete={deletePlan}
+              onViewMap={openMapForLocation}
+              favorites={favorites}
+              onToggleFavorite={toggleFavorite}
+            />
           </div>
         </div>
 
@@ -397,7 +443,11 @@ export default function App() {
         <div className="card">
           <h3>Your Cart</h3>
           <div id="cartList" className="list">
-            <Cart cart={cart} changeQty={changeCartQty} removeItem={removeCartItem} onCheckout={()=>alert("Checkout simulated!")} onEmpty={emptyCart}/>
+            <Cart cart={cart} 
+            changeQty={changeCartQty} 
+            removeItem={removeCartItem} 
+            onCheckout={handleCheckout}
+            onEmpty={emptyCart}/>
           </div>
         </div>
 
@@ -414,11 +464,4 @@ export default function App() {
       </aside>
     </div>
   );
-
-
-
-
-
-
-
 }
