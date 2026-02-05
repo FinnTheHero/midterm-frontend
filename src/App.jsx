@@ -1,499 +1,685 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import "./App.css";
+import { useState, useEffect } from "react";
+import axios from "axios";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { ProductCard } from "./Components/ProductCard";
-import { Cart } from "./Components/Cart";
-import { HikeList } from "./Components/HikeList";
 
+const API = "http://localhost:3000/api";
 
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+    iconRetinaUrl:
+        "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png",
+    iconUrl:
+        "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png",
+    shadowUrl:
+        "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+});
 
-const DEFAULT_PRODUCTS = [
-  { id: 1, title: "Hiking Boots", price: 89.99, qty: 15, img: "/images/product1.png" },
-  { id: 2, title: "Backpack", price: 45.5, qty: 20, img: "/images/product2.png" },
-  { id: 3, title: "Water Bottle", price: 12.99, qty: 50, img: "/images/product3.png" },
-];
+function App() {
+    const [token, setToken] = useState(localStorage.getItem("token"));
+    const [user, setUser] = useState(null);
+    const [page, setPage] = useState("home");
+    const [selectedRoute, setSelectedRoute] = useState(null);
+    const [routes, setRoutes] = useState([]);
+    const [plans, setPlans] = useState([]);
+    const [products, setProducts] = useState([]);
+    const [cart, setCart] = useState([]);
+    const [cartOpen, setCartOpen] = useState(false);
 
-const DIFFICULTY_ITEMS = {
-  Easy: ["Water Bottle", "Map", "Snacks"],
-  Moderate: ["Water Bottle", "Map", "Snacks", "First Aid Kit", "Rain Jacket"],
-  Hard: ["Water Bottle", "Map", "Snacks", "First Aid Kit", "Rain Jacket", "Hiking Poles", "Extra Layers"]
-};
+    useEffect(() => {
+        axios.get(`${API}/routes`).then((r) => setRoutes(r.data));
+        axios.get(`${API}/products`).then((r) => setProducts(r.data));
+        if (token) {
+            axios
+                .get(`${API}/plans`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                })
+                .then((r) => setPlans(r.data));
+            const decoded = JSON.parse(atob(token.split(".")[1]));
+            setUser({ role: decoded.role });
+        }
+    }, [token]);
 
-const LOGIN_BANNERS = [
-  {
-    title: "Plan Your Perfect Hike 🌄",
-    text: "Create hiking plans, choose difficulty, and stay prepared for every trail."
-  },
-  {
-    title: "Stay Safe on the Trail 🧭",
-    text: "Get random trail suggestions and safety alerts for hiking areas."
-  },
-  {
-    title: "Hike on a Budget 💰",
-    text: "Buy only what you need. Budget-friendly gear for every hike."
-  }
-];
-
-const loadCart = () => {
-  try {
-    const raw = localStorage.getItem("cart");
-    return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
-};
-const saveCart = (c) => localStorage.setItem("cart", JSON.stringify(c));
-
-const getRandomColor = () => {
-  const colors = ["#2b8aef", "#f97316", "#10b981", "#eab308", "#8b5cf6", "#ec4899"];
-  return colors[Math.floor(Math.random() * colors.length)];
-};
-
-export default function App() {
-  // --- USERS ---
-  const [user, setUser] = useState(null); // null = not logged in
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-
-  // --- DATA ---
-  const [hikes, setHikes] = useState([]);
-  const [products, setProducts] = useState(() => DEFAULT_PRODUCTS);
-  const [cart, setCart] = useState(() => loadCart());
-
-  // --- UI ---
-  const [filterDifficulty, setFilterDifficulty] = useState("");
-  const [searchTerm, setSearchTerm] = useState("");
-
-  // --- Forms ---
-  const [hikeName, setHikeName] = useState("");
-  const [hikeLocation, setHikeLocation] = useState("");
-  const [hikeDifficulty, setHikeDifficulty] = useState("Easy");
-  const [hikeNotes, setHikeNotes] = useState("");
-
-  const [prodTitle, setProdTitle] = useState("");
-  const [prodPrice, setProdPrice] = useState("");
-  const [prodQty, setProdQty] = useState("");
-  const [prodImg, setProdImg] = useState("");
-  const [editingProductId, setEditingProductId] = useState(null);
-
-  const [bannerIndex, setBannerIndex] = useState(0);
-
-  const nextBanner = () => {
-  setBannerIndex((prev) => (prev + 1) % LOGIN_BANNERS.length);
-  };
-
-  const prevBanner = () => {
-    setBannerIndex((prev) =>
-      prev === 0 ? LOGIN_BANNERS.length - 1 : prev - 1
-    );
-  };
-
-  const [favorites, setFavorites] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem("favorites")) || [];
-    } catch {
-      return [];
-    }
-  });
-
-  const toggleFavorite = (hikeId) => {
-    setFavorites(prev =>
-      prev.includes(hikeId)
-        ? prev.filter(id => id !== hikeId)
-        : [...prev, hikeId]
-    );
-  };
-
-
-  // --- MAP ---
-  const [mapLocation, setMapLocation] = useState(null);
-  const [mapDifficulty, setMapDifficulty] = useState("Easy");
-  const [showMap, setShowMap] = useState(false);
-  const mapRef = useRef(null);
-  const mapDivRef = useRef(null);
-
-  // --- Updated generateRandomTrails ---
-  const generateRandomTrails = (lat, lng) => {
-    const trails = [];
-
-    for (let i = 0; i < 6; i++) {
-      const offsetLat = (Math.random() - 0.5) * 0.02;
-      const offsetLng = (Math.random() - 0.5) * 0.02;
-
-      const path = [
-        [lat, lng],
-        [lat + offsetLat, lng + offsetLng],
-        [lat + offsetLat * 1.5, lng + offsetLng * 1.5],
-      ];
-
-      // approximate length in km
-      const length = Math.sqrt(Math.pow(offsetLat*111,2)+Math.pow(offsetLng*111,2)).toFixed(1); 
-      // approximate duration in minutes
-      const duration = Math.floor(Math.random()*120 + 30);
-
-      trails.push({ path, length, duration });
-    }
-
-    return trails;
-  };
-
-  // --- LocalStorage helpers ---
-  useEffect(() => {
-    if (!user) return;
-    localStorage.setItem(
-      `cart_${user.username}`,
-      JSON.stringify(cart)
-    );
-  }, [cart, user]);
-
-
-  useEffect(() => {
-    if (!user) return;
-    localStorage.setItem(
-      `hikes_${user.username}`,
-      JSON.stringify(hikes)
-    );
-  }, [hikes, user]);
-
-  useEffect(() => {
-    if (!user) return;
-    localStorage.setItem(
-      `favorites_${user.username}`,
-      JSON.stringify(favorites)
-    );
-  }, [favorites, user]);
-
-
-  // --- Filtered ---
-  const filteredHikes = useMemo(() =>
-    filterDifficulty ? hikes.filter(h => h.difficulty === filterDifficulty) : hikes,
-    [hikes, filterDifficulty]
-  );
-  const filteredProducts = useMemo(() =>
-    searchTerm ? products.filter(p => p.title.toLowerCase().includes(searchTerm.toLowerCase())) : products,
-    [products, searchTerm]
-  );
-
-  // --- Login/Register ---
-  const USERS_KEY = "hiking_users";
-
-  const handleCheckout = () => {
-    if (cart.length === 0) return alert("Cart is empty");
-
-    // Reduce stock quantities
-    setProducts(prevProducts =>
-      prevProducts.map(p => {
-        const cartItem = cart.find(c => c.id === p.id);
-        if (!cartItem) return p; // not in cart, leave unchanged
-        return { ...p, qty: Math.max(p.qty - cartItem.qty, 0) }; // reduce qty
-      })
-    );
-
-    // Clear cart
-    setCart([]);
-
-    alert("Checkout successful!");
-  };
-
-
-  const handleRegister = () => {
-    if (!username || !password) return alert("Enter username/password");
-    const saved = JSON.parse(localStorage.getItem(USERS_KEY) || "{}");
-    if (saved[username]) return alert("User exists");
-    saved[username] = { password, isAdmin: username === "admin" };
-    localStorage.setItem(USERS_KEY, JSON.stringify(saved));
-    alert("Registered! Now login.");
-  };
-
-  const handleLogin = () => {
-    const saved = JSON.parse(localStorage.getItem(USERS_KEY) || "{}");
-    const u = saved[username];
-    if (!u || u.password !== password) return alert("Wrong username/password");
-    setUser({ username, isAdmin: u.isAdmin });
-
-    const savedCart = JSON.parse(
-      localStorage.getItem(`cart_${username}`) || "[]"
-    );
-    setCart(savedCart);
-
-
-    const savedHikes = JSON.parse(
-      localStorage.getItem(`hikes_${username}`) || "[]"
-    );
-    setHikes(savedHikes);
-
-  };
-
-  const handleLogout = () => {
-    setUser(null);
-    setHikes([]);
-  };
-
-
-  // --- Hikes ---
-  const checkRandomDanger = () => {
-    if (Math.random() < 0.2) alert("⚠️ Warning: This area may have dangerous wildlife or terrain!");
-  };
-
-  const handleHikeSubmit = (e) => {
-    e.preventDefault();
-    if (!hikeName.trim()) return alert("Name required");
-
-    const newHike = {
-      id: Date.now(),
-      name: hikeName.trim(),
-      location: hikeLocation.trim(),
-      difficulty: hikeDifficulty,
-      notes: hikeNotes.trim()
+    const login = async (username, password) => {
+        const { data } = await axios.post(`${API}/login`, {
+            username,
+            password,
+        });
+        setToken(data.token);
+        localStorage.setItem("token", data.token);
+        setUser(data.user);
+        setPage("home");
     };
 
-    setHikes(prev => [...prev, newHike]);
-    setHikeName(""); setHikeLocation(""); setHikeDifficulty("Easy"); setHikeNotes("");
-    checkRandomDanger();
-  };
+    const register = async (username, password) => {
+        await axios.post(`${API}/register`, { username, password });
+        alert("Registered! Please login.");
+    };
 
-  const deletePlan = (idx) => {
-    if (!window.confirm("Delete this hike?")) return;
-    setHikes(prev => prev.filter((_, i) => i !== idx));
-  };
+    const logout = () => {
+        setToken(null);
+        setUser(null);
+        localStorage.removeItem("token");
+        setPage("home");
+    };
 
-  const editPlan = (idx) => {
-    const h = hikes[idx];
-    if (!h) return;
-    setHikeName(h.name);
-    setHikeLocation(h.location);
-    setHikeDifficulty(h.difficulty);
-    setHikeNotes(h.notes);
-    setHikes(prev => prev.filter((_, i) => i !== idx));
-  };
+    const viewRoute = async (id) => {
+        const { data } = await axios.get(`${API}/routes/${id}`);
+        setSelectedRoute(data);
+        setPage("detail");
+    };
 
-  const clearAllPlans = () => {
-    if (window.confirm("Clear all plans?")) setHikes([]);
-  };
+    const savePlan = async (route_id, date, budget, notes) => {
+        if (!token) {
+            setPage("auth");
+            return;
+        }
+        await axios.post(
+            `${API}/plans`,
+            { route_id, date, budget, notes },
+            { headers: { Authorization: `Bearer ${token}` } },
+        );
+        const { data } = await axios.get(`${API}/plans`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        setPlans(data);
+    };
 
-  // --- Cart ---
-  const addToCart = (productId) => {
-    const product = products.find(p => p.id === productId);
-    if (!product || product.qty <= 0) return alert("Out of stock");
-    setCart(prev => {
-      const found = prev.find(c => c.id === productId);
-      if (found) return prev.map(c => c.id === productId ? { ...c, qty: c.qty + 1 } : c);
-      return [...prev, { id: product.id, title: product.title, price: product.price, qty: 1 }];
-    });
-  };
+    const deletePlan = async (id) => {
+        await axios.delete(`${API}/plans/${id}`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        setPlans(plans.filter((p) => p.id !== id));
+    };
 
-  const changeCartQty = (idx, delta) => setCart(prev => {
-    const copy = [...prev];
-    if (!copy[idx]) return copy;
-    copy[idx] = { ...copy[idx], qty: copy[idx].qty + delta };
-    if (copy[idx].qty <= 0) copy.splice(idx, 1);
-    return copy;
-  });
-  const removeCartItem = (idx) => setCart(prev => prev.filter((_, i) => i !== idx));
-  const emptyCart = () => { if (window.confirm("Empty cart?")) setCart([]); };
+    const addToCart = (product) => {
+        if (!token) {
+            setPage("auth");
+            return;
+        }
+        const existing = cart.find((c) => c.id === product.id);
+        if (existing) {
+            setCart(
+                cart.map((c) =>
+                    c.id === product.id ? { ...c, qty: c.qty + 1 } : c,
+                ),
+            );
+        } else {
+            setCart([...cart, { ...product, qty: 1 }]);
+        }
+    };
 
-  // --- Products ---
-  const handleAddProduct = () => {
-    if (!user?.isAdmin) return alert("Admins only");
-    const title = prodTitle.trim();
-    if (!title) return alert("Enter title");
-    const price = parseFloat(prodPrice) || 0;
-    const qty = parseInt(prodQty) || 0;
-    const img = prodImg.trim();
+    const updateStock = async (id, qty) => {
+        const product = products.find((p) => p.id === id);
+        await axios.put(
+            `${API}/products/${id}`,
+            { ...product, qty },
+            { headers: { Authorization: `Bearer ${token}` } },
+        );
+        const { data } = await axios.get(`${API}/products`);
+        setProducts(data);
+    };
 
-    if (editingProductId) {
-      setProducts(prev => prev.map(p => p.id === editingProductId ? { ...p, title, price, qty, img } : p));
-      setEditingProductId(null);
-    } else {
-      const newId = Date.now();
-      setProducts(prev => [...prev, { id: newId, title, price, qty, img }]);
+    const checkout = async () => {
+        const items = cart.map((c) => ({ id: c.id, qty: c.qty }));
+        const { data } = await axios.post(
+            `${API}/orders`,
+            { items },
+            { headers: { Authorization: `Bearer ${token}` } },
+        );
+        setProducts(data.products);
+        setCart([]);
+        setCartOpen(false);
+        alert("Order placed!");
+    };
+
+    if (page === "auth")
+        return (
+            <Auth
+                onLogin={login}
+                onRegister={register}
+                onBack={() => setPage("home")}
+            />
+        );
+
+    if (page === "detail" && selectedRoute) {
+        return (
+            <div>
+                <Nav
+                    user={user}
+                    onLogout={logout}
+                    onNav={setPage}
+                    cart={cart}
+                    onCart={() => setCartOpen(true)}
+                />
+                <RouteDetail
+                    route={selectedRoute}
+                    onBack={() => setPage("home")}
+                    onSave={savePlan}
+                />
+                <Cart
+                    cart={cart}
+                    open={cartOpen}
+                    onClose={() => setCartOpen(false)}
+                    onCheckout={checkout}
+                />
+            </div>
+        );
     }
 
-    setProdTitle(""); setProdPrice(""); setProdQty(""); setProdImg("");
-  };
+    if (page === "plans") {
+        return (
+            <div>
+                <Nav
+                    user={user}
+                    onLogout={logout}
+                    onNav={setPage}
+                    cart={cart}
+                    onCart={() => setCartOpen(true)}
+                />
+                <div className="container">
+                    <h2 style={{ marginBottom: "1.5rem" }}>My Hiking Plans</h2>
+                    {plans.length === 0 ? (
+                        <p>No plans yet</p>
+                    ) : (
+                        <div className="grid">
+                            {plans.map((p) => (
+                                <div key={p.id} className="card">
+                                    <img
+                                        src={p.image_url}
+                                        alt={p.route_name}
+                                        className="card-img"
+                                    />
+                                    <div className="card-body">
+                                        <h3 className="card-title">
+                                            {p.route_name}
+                                        </h3>
+                                        <p className="card-text">
+                                            {p.location}
+                                        </p>
+                                        <span
+                                            className={`badge badge-${p.difficulty?.toLowerCase()}`}
+                                        >
+                                            {p.difficulty}
+                                        </span>
+                                        <p style={{ marginTop: "1rem" }}>
+                                            Date: {p.date}
+                                        </p>
+                                        <p>Budget: ${p.budget}</p>
+                                        <button
+                                            className="btn btn-danger"
+                                            onClick={() => deletePlan(p.id)}
+                                        >
+                                            Delete
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+                <Cart
+                    cart={cart}
+                    open={cartOpen}
+                    onClose={() => setCartOpen(false)}
+                    onCheckout={checkout}
+                />
+            </div>
+        );
+    }
 
-  const deleteProduct = (id) => {
-    if (!user?.isAdmin) return;
-    if (!window.confirm("Delete this product?")) return;
-    setProducts(prev => prev.filter(p => p.id !== id));
-  };
+    if (page === "store") {
+        return (
+            <div>
+                <Nav
+                    user={user}
+                    onLogout={logout}
+                    onNav={setPage}
+                    cart={cart}
+                    onCart={() => setCartOpen(true)}
+                />
+                <div className="container">
+                    {user?.role === "admin" && (
+                        <div className="admin-panel">
+                            <h2>Admin: Manage Inventory</h2>
+                            <div
+                                className="product-grid"
+                                style={{ marginTop: "1.5rem" }}
+                            >
+                                {products.map((p) => (
+                                    <div
+                                        key={p.id}
+                                        style={{
+                                            padding: "1rem",
+                                            border: "1px solid #e1e4e8",
+                                            borderRadius: "8px",
+                                        }}
+                                    >
+                                        <h4>{p.title}</h4>
+                                        <p>Stock: {p.qty}</p>
+                                        <input
+                                            type="number"
+                                            defaultValue={p.qty}
+                                            onBlur={(e) =>
+                                                updateStock(
+                                                    p.id,
+                                                    parseInt(e.target.value),
+                                                )
+                                            }
+                                            style={{ width: "80px" }}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    <h2 style={{ marginBottom: "1.5rem" }}>Gear Store</h2>
+                    <div className="product-grid">
+                        {products.map((p) => (
+                            <div key={p.id} className="product-card">
+                                <img
+                                    src={p.image_url}
+                                    alt={p.title}
+                                    className="product-img"
+                                />
+                                <div className="product-body">
+                                    <h4>{p.title}</h4>
+                                    <p>${p.price}</p>
+                                    <p
+                                        style={{
+                                            fontSize: "0.85rem",
+                                            color: "#586069",
+                                        }}
+                                    >
+                                        Stock: {p.qty}
+                                    </p>
+                                    <button
+                                        className="btn btn-primary"
+                                        onClick={() => addToCart(p)}
+                                        style={{
+                                            width: "100%",
+                                            marginTop: "0.5rem",
+                                        }}
+                                    >
+                                        Add to Cart
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+                <Cart
+                    cart={cart}
+                    open={cartOpen}
+                    onClose={() => setCartOpen(false)}
+                    onCheckout={checkout}
+                />
+            </div>
+        );
+    }
 
-  const editProduct = (id) => {
-    if (!user?.isAdmin) return;
-    const p = products.find(x => x.id === id);
-    if (!p) return;
-    setProdTitle(p.title); setProdPrice(String(p.price)); setProdQty(String(p.qty)); setProdImg(p.img || "");
-    setEditingProductId(p.id);
-  };
-
-  // --- MAP ---
-  useEffect(() => {
-    if (!showMap || !mapLocation) return;
-    let cancelled = false;
-    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(mapLocation)}`;
-    fetch(url)
-      .then(res => res.json())
-      .then(data => {
-        if (cancelled) return;
-        if (!data || !data[0]) return alert("Location not found");
-
-        const lat = parseFloat(data[0].lat);
-        const lon = parseFloat(data[0].lon);
-
-        if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
-
-        mapRef.current = L.map(mapDivRef.current).setView([lat, lon], 13);
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; OpenStreetMap contributors" }).addTo(mapRef.current);
-        L.marker([lat, lon]).addTo(mapRef.current).bindPopup(mapLocation).openPopup();
-
-        const trails = generateRandomTrails(lat, lon);
-        const trailColor = mapDifficulty === "Easy" ? "green" :
-                           mapDifficulty === "Moderate" ? "yellow" : "red";
-
-        trails.forEach((trail, index) => {
-          L.polyline(trail.path, { color: trailColor, weight: 4, opacity: 0.8 })
-            .addTo(mapRef.current)
-            .bindPopup(
-              `🥾 Trail ${index + 1}<br/>
-              📏 Length: ${trail.length} km<br/>
-              ⏱ Duration: ~${trail.duration} min`
-            );
-        });
-      })
-      .catch(() => alert("Map error"));
-
-    return () => { cancelled = true; if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; } };
-  }, [showMap, mapLocation, mapDifficulty]);
-
-  const openMapForLocation = (location, difficulty) => {if (!location) return alert("No location provided");setMapLocation(location);setMapDifficulty(difficulty);setShowMap(true);};
-  const closeMap = () => { setShowMap(false); setMapLocation(null); if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; } };
-
-  // --- JSX ---
-  if (!user) {
     return (
-      <div className="container login-layout">
-        {/* LEFT: Banner */}
-        <div className="login-banner">
-          <h1>{LOGIN_BANNERS[bannerIndex].title}</h1>
-          <p>{LOGIN_BANNERS[bannerIndex].text}</p>
-          <div className="banner-controls">
-            <button onClick={prevBanner} className="small">◀</button>
-            <button onClick={nextBanner} className="small">▶</button>
-          </div>
-        </div>
-        {/* RIGHT: Login */}
-        <div className="login-card card">
-          <h2>Login / Register</h2>
-          <label>
-            Username
-            <input value={username} onChange={(e) => setUsername(e.target.value)} />
-          </label>
-          <label>
-            Password
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          </label>
-          <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
-            <button onClick={handleLogin}>Login</button>
-            <button onClick={handleRegister}>Register</button>
-          </div>
-          <p className="muted" style={{ marginTop: "10px" }}>
-            Tip: Login as <b>admin</b> to manage products
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="container">
-      <div>
-        <div className="header">
-          <div className="logo">BP</div>
-          <div>
-            <h1>Budget-Friendly Hiking Planner</h1>
-            <div className="muted">Plan hikes, track budget, and buy affordable gear</div>
-          </div>
-          <button onClick={handleLogout} style={{marginLeft:"20px"}}>Logout</button>
-        </div>
-
-        {/* Hike Planner */}
-        <div className="card">
-          <h2>Plan a Hike</h2>
-          <label>
-            Filter by Difficulty
-            <select value={filterDifficulty} onChange={e=>setFilterDifficulty(e.target.value)}>
-              <option value="">All</option><option>Easy</option><option>Moderate</option><option>Hard</option>
-            </select>
-          </label>
-
-          <form id="hikeForm" onSubmit={handleHikeSubmit}>
-            <div className="form-row">
-              <label>Hike name<input value={hikeName} onChange={e=>setHikeName(e.target.value)} required/></label>
-              <label>Location<input value={hikeLocation} onChange={e=>setHikeLocation(e.target.value)}/></label>
-            </div>
-            <div className="form-row">
-              <label>Difficulty<select value={hikeDifficulty} onChange={e=>setHikeDifficulty(e.target.value)}><option>Easy</option><option>Moderate</option><option>Hard</option></select></label>
-              <label>&nbsp;
-                <button type="button" className="small" onClick={clearAllPlans} style={{margin:"15px 0",padding:"10px"}}>Clear All Plans</button>
-              </label>
-            </div>
-            <label>Notes<textarea rows="3" value={hikeNotes} onChange={e=>setHikeNotes(e.target.value)}/></label>
-            <div className="muted">Suggested items: {DIFFICULTY_ITEMS[hikeDifficulty].join(", ")}</div>
-            <button style={{margin:"10px 0",padding:"10px"}} type="submit" className="small">Save Plan</button>
-          </form>
-
-          <div id="plansList" className="list">
-            <HikeList 
-              hikes={filteredHikes}
-              onEdit={editPlan}
-              onDelete={deletePlan}
-              onViewMap={openMapForLocation}
-              favorites={favorites}
-              onToggleFavorite={toggleFavorite}
+        <div>
+            <Nav
+                user={user}
+                onLogout={logout}
+                onNav={setPage}
+                cart={cart}
+                onCart={() => setCartOpen(true)}
             />
-          </div>
+            <div className="hero">
+                <h1>Discover Your Next Adventure</h1>
+                <p>Explore trails, plan hikes, and gear up for the outdoors</p>
+            </div>
+            <div className="container">
+                <div className="grid">
+                    {routes.map((r) => (
+                        <div
+                            key={r.id}
+                            className="card"
+                            onClick={() => viewRoute(r.id)}
+                        >
+                            <img
+                                src={r.image_url}
+                                alt={r.name}
+                                className="card-img"
+                            />
+                            <div className="card-body">
+                                <h3 className="card-title">{r.name}</h3>
+                                <p className="card-text">{r.location}</p>
+                                <span
+                                    className={`badge badge-${r.difficulty.toLowerCase()}`}
+                                >
+                                    {r.difficulty}
+                                </span>
+                                <p
+                                    style={{
+                                        marginTop: "1rem",
+                                        color: "#586069",
+                                    }}
+                                >
+                                    {r.distance} mi • {r.duration}
+                                </p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+            <Cart
+                cart={cart}
+                open={cartOpen}
+                onClose={() => setCartOpen(false)}
+                onCheckout={checkout}
+            />
         </div>
-
-        {showMap && <div id="mapContainer" style={{marginTop:"16px"}}>
-          <button type="button" className="small" style={{margin:"15px 0",padding:"10px"}} onClick={closeMap}>Close Map</button>
-          <div id="map" ref={mapDivRef} style={{height:300}}/>
-        </div>}
-
-        {/* Products */}
-        <div className="card" style={{marginTop:"16px"}}>
-          <h2>Products (Store)</h2>
-          <input placeholder="Search products..." className="search-input" value={searchTerm} onChange={e=>setSearchTerm(e.target.value)}/>
-          <div id="productsList" className="list">
-            {filteredProducts.length === 0 ? <div className="muted">No products found</div> :
-              filteredProducts.map(p => <ProductCard key={p.id} product={p} onAdd={addToCart} adminLogged={user?.isAdmin} onEdit={editProduct} onDelete={deleteProduct}/>)
-            }
-          </div>
-        </div>
-      </div>
-
-      {/* Sidebar */}
-      <aside className="aside-stack">
-        <div className="card">
-          <h3>Your Cart</h3>
-          <div id="cartList" className="list">
-            <Cart cart={cart} 
-            changeQty={changeCartQty} 
-            removeItem={removeCartItem} 
-            onCheckout={handleCheckout}
-            onEmpty={emptyCart}/>
-          </div>
-        </div>
-
-        {user?.isAdmin && <div className="card">
-          <h3>Admin Panel</h3>
-          <label>Title<input value={prodTitle} onChange={e=>setProdTitle(e.target.value)}/></label>
-          <label>Price<input type="number" min="0" step="0.01" value={prodPrice} onChange={e=>setProdPrice(e.target.value)}/></label>
-          <label>Qty<input type="number" min="0" step="1" value={prodQty} onChange={e=>setProdQty(e.target.value)}/></label>
-          <label>Image URL<input placeholder="https://example.com/img.png" value={prodImg} onChange={e=>setProdImg(e.target.value)}/></label>
-          <div style={{marginTop:"8px"}} className="row">
-            <button className="small" onClick={handleAddProduct}>Add / Update</button>
-          </div>
-        </div>}
-      </aside>
-    </div>
-  );
+    );
 }
+
+function Nav({ user, onLogout, onNav, cart, onCart }) {
+    return (
+        <nav className="nav">
+            <div className="nav-brand" onClick={() => onNav("home")}>
+                🥾 TrailBuddy
+            </div>
+            <div className="nav-links">
+                <span className="nav-link" onClick={() => onNav("home")}>
+                    Explore
+                </span>
+                {user && (
+                    <span className="nav-link" onClick={() => onNav("plans")}>
+                        My Plans
+                    </span>
+                )}
+                <span className="nav-link" onClick={() => onNav("store")}>
+                    Store
+                </span>
+                <button className="btn btn-outline" onClick={onCart}>
+                    Cart ({cart.length})
+                </button>
+                {user ? (
+                    <button className="btn btn-secondary" onClick={onLogout}>
+                        Logout
+                    </button>
+                ) : (
+                    <button
+                        className="btn btn-primary"
+                        onClick={() => onNav("auth")}
+                    >
+                        Login
+                    </button>
+                )}
+            </div>
+        </nav>
+    );
+}
+
+function Auth({ onLogin, onRegister, onBack }) {
+    const [tab, setTab] = useState("login");
+    const [username, setUsername] = useState("");
+    const [password, setPassword] = useState("");
+
+    const submit = () => {
+        tab === "login"
+            ? onLogin(username, password)
+            : onRegister(username, password);
+    };
+
+    return (
+        <div className="auth-page">
+            <div className="auth-box">
+                <div
+                    style={{
+                        textAlign: "center",
+                        marginBottom: "1rem",
+                        cursor: "pointer",
+                    }}
+                    onClick={onBack}
+                >
+                    <span style={{ fontSize: "2rem" }}>🥾</span>
+                </div>
+                <h2 style={{ textAlign: "center", marginBottom: "2rem" }}>
+                    TrailBuddy
+                </h2>
+                <div className="auth-tabs">
+                    <button
+                        className={`auth-tab ${tab === "login" ? "active" : ""}`}
+                        onClick={() => setTab("login")}
+                    >
+                        Login
+                    </button>
+                    <button
+                        className={`auth-tab ${tab === "register" ? "active" : ""}`}
+                        onClick={() => setTab("register")}
+                    >
+                        Register
+                    </button>
+                </div>
+                <input
+                    placeholder="Username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                />
+                <input
+                    type="password"
+                    placeholder="Password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                />
+                <button
+                    className="btn btn-primary"
+                    onClick={submit}
+                    style={{ width: "100%", marginTop: "1rem" }}
+                >
+                    {tab === "login" ? "Login" : "Register"}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+function RouteDetail({ route, onBack, onSave }) {
+    const [date, setDate] = useState("");
+    const [budget, setBudget] = useState("");
+    const [notes, setNotes] = useState("");
+    const [weather, setWeather] = useState(null);
+
+    useEffect(() => {
+        const mapDiv = document.getElementById("route-map");
+        if (!mapDiv) return;
+        const map = L.map(mapDiv).setView([route.lat, route.lng], 12);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(
+            map,
+        );
+        L.marker([route.lat, route.lng])
+            .addTo(map)
+            .bindPopup(route.name)
+            .openPopup();
+        return () => map.remove();
+    }, [route]);
+
+    useEffect(() => {
+        axios
+            .get(`${API}/weather/${route.lat}/${route.lng}`)
+            .then((r) => setWeather(r.data.current))
+            .catch(() => {});
+    }, [route]);
+
+    const getWeatherIcon = (code) => {
+        if (code === 0) return "☀️";
+        if (code <= 3) return "⛅";
+        if (code <= 67) return "🌧️";
+        return "🌨️";
+    };
+
+    return (
+        <div className="detail-container">
+            <div className="back-btn" onClick={onBack}>
+                ← Back to Trails
+            </div>
+            <div className="detail-header">
+                <img
+                    src={route.image_url}
+                    alt={route.name}
+                    className="detail-img"
+                />
+                <h1 className="detail-title">{route.name}</h1>
+                <p
+                    style={{
+                        fontSize: "1.1rem",
+                        color: "#586069",
+                        marginBottom: "1rem",
+                    }}
+                >
+                    {route.location}
+                </p>
+                <span
+                    className={`badge badge-${route.difficulty.toLowerCase()}`}
+                >
+                    {route.difficulty}
+                </span>
+                <div className="detail-meta">
+                    <div className="meta-item">
+                        <span className="meta-label">Distance</span>
+                        <span className="meta-value">
+                            {route.distance} miles
+                        </span>
+                    </div>
+                    <div className="meta-item">
+                        <span className="meta-label">Duration</span>
+                        <span className="meta-value">{route.duration}</span>
+                    </div>
+                    <div className="meta-item">
+                        <span className="meta-label">Elevation Gain</span>
+                        <span className="meta-value">{route.elevation} ft</span>
+                    </div>
+                </div>
+                <p style={{ lineHeight: "1.6", marginTop: "1.5rem" }}>
+                    {route.description}
+                </p>
+            </div>
+
+            {weather && (
+                <div className="weather-box">
+                    <h3 style={{ marginBottom: "1rem" }}>Current Weather</h3>
+                    <div
+                        style={{
+                            display: "flex",
+                            gap: "2rem",
+                            alignItems: "center",
+                        }}
+                    >
+                        <span style={{ fontSize: "3rem" }}>
+                            {getWeatherIcon(weather.weathercode)}
+                        </span>
+                        <div>
+                            <p style={{ fontSize: "2rem", fontWeight: "bold" }}>
+                                {Math.round(weather.temperature_2m)}°F
+                            </p>
+                            <p>Wind: {weather.windspeed_10m} mph</p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <div className="map-container" id="route-map"></div>
+
+            <div
+                style={{
+                    background: "white",
+                    padding: "2rem",
+                    borderRadius: "12px",
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+                }}
+            >
+                <h3 style={{ marginBottom: "1.5rem" }}>Plan Your Hike</h3>
+                <input
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                />
+                <input
+                    type="number"
+                    placeholder="Budget ($)"
+                    value={budget}
+                    onChange={(e) => setBudget(e.target.value)}
+                />
+                <textarea
+                    placeholder="Notes (optional)"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows="3"
+                />
+                <button
+                    className="btn btn-primary"
+                    onClick={() => onSave(route.id, date, budget, notes)}
+                    style={{ width: "100%" }}
+                >
+                    Save to My Plans
+                </button>
+            </div>
+        </div>
+    );
+}
+
+function Cart({ cart, open, onClose, onCheckout }) {
+    const total = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
+    return (
+        <div className={`cart-panel ${open ? "open" : ""}`}>
+            <div className="cart-header">
+                <h2>Shopping Cart</h2>
+                <button
+                    onClick={onClose}
+                    style={{
+                        background: "none",
+                        border: "none",
+                        fontSize: "1.5rem",
+                        cursor: "pointer",
+                    }}
+                >
+                    ×
+                </button>
+            </div>
+            <div className="cart-items">
+                {cart.length === 0 ? (
+                    <p>Cart is empty</p>
+                ) : (
+                    <>
+                        {cart.map((item) => (
+                            <div key={item.id} className="cart-item">
+                                <div>
+                                    <p style={{ fontWeight: "600" }}>
+                                        {item.title}
+                                    </p>
+                                    <p style={{ color: "#586069" }}>
+                                        Qty: {item.qty}
+                                    </p>
+                                </div>
+                                <p style={{ fontWeight: "600" }}>
+                                    ${(item.price * item.qty).toFixed(2)}
+                                </p>
+                            </div>
+                        ))}
+                        <div
+                            style={{
+                                marginTop: "1.5rem",
+                                fontSize: "1.25rem",
+                                fontWeight: "bold",
+                            }}
+                        >
+                            Total: ${total.toFixed(2)}
+                        </div>
+                        <button
+                            className="btn btn-primary"
+                            onClick={onCheckout}
+                            style={{ width: "100%", marginTop: "1rem" }}
+                        >
+                            Checkout
+                        </button>
+                    </>
+                )}
+            </div>
+        </div>
+    );
+}
+
+export default App;
