@@ -368,7 +368,8 @@ function App() {
                                         color: "#586069",
                                     }}
                                 >
-                                    {r.distance} mi • {r.duration}
+                                    {(r.distance * 1.60934).toFixed(1)} km •{" "}
+                                    {r.duration}
                                 </p>
                             </div>
                         </div>
@@ -508,6 +509,8 @@ function RouteDetail({ route, onBack, onSave }) {
     }, [route]);
 
     useEffect(() => {
+        // Assuming the API returns temperature in Fahrenheit and wind speed in MPH
+        // based on the original display unit, and we need to convert for Celsius/Km.
         axios
             .get(`${API}/weather/${route.lat}/${route.lng}`)
             .then((r) => setWeather(r.data.current))
@@ -551,7 +554,7 @@ function RouteDetail({ route, onBack, onSave }) {
                     <div className="meta-item">
                         <span className="meta-label">Distance</span>
                         <span className="meta-value">
-                            {route.distance} miles
+                            {(route.distance * 1.60934).toFixed(1)} kilometers
                         </span>
                     </div>
                     <div className="meta-item">
@@ -583,9 +586,16 @@ function RouteDetail({ route, onBack, onSave }) {
                         </span>
                         <div>
                             <p style={{ fontSize: "2rem", fontWeight: "bold" }}>
-                                {Math.round(weather.temperature_2m)}°F
+                                {Math.round(
+                                    ((weather.temperature_2m - 32) * 5) / 9,
+                                )}
+                                °C
                             </p>
-                            <p>Wind: {weather.windspeed_10m} mph</p>
+                            <p>
+                                Wind:{" "}
+                                {(weather.windspeed_10m * 1.60934).toFixed(1)}{" "}
+                                km/h
+                            </p>
                         </div>
                     </div>
                 </div>
