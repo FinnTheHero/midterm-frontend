@@ -26,6 +26,16 @@ function App() {
     const [cart, setCart] = useState([]);
     const [cartOpen, setCartOpen] = useState(false);
 
+    const formatDate = (date) =>
+        new Date(date).toLocaleString("en-GB", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+        });
+
     useEffect(() => {
         axios.get(`${API}/routes`).then((r) => setRoutes(r.data));
         axios.get(`${API}/products`).then((r) => setProducts(r.data));
@@ -203,7 +213,7 @@ function App() {
                                             {p.difficulty}
                                         </span>
                                         <p style={{ marginTop: "1rem" }}>
-                                            Date: {p.date}
+                                            Date: {formatDate(p.date)}
                                         </p>
                                         <p>Budget: ${p.budget}</p>
                                         <button
